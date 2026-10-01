@@ -1,0 +1,19 @@
+{
+  "name": "lenovo",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@opencode/cli": "^2.0.17",
+    "opencode-ai": "^1.18.32"
+  },
+  "trustedDependencies": [
+    "@opencode/cli"
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "buildings": [
+    {
+      "id": "bloc-1",
+      "name": "Bloc 1",
+      "x": -65,
+      "z": -10,
+      "width": 18,
+      "depth": 30,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-2",
+      "name": "Bloc 2",
+      "x": -42,
+      "z": -5,
+      "width": 8,
+      "depth": 12,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-3",
+      "name": "Bloc 3",
+      "x": -32,
+      "z": -5,
+      "width": 8,
+      "depth": 10,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-4",
+      "name": "Bloc 4",
+      "x": -22,
+      "z": -5,
+      "width": 8,
+      "depth": 10,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-5",
+      "name": "Bloc 5",
+      "x": -8,
+      "z": 2,
+      "width": 12,
+      "depth": 14,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-6",
+      "name": "Bloc 6",
+      "x": 10,
+      "z": -18,
+      "width": 22,
+      "depth": 10,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-7",
+      "name": "Bloc 7",
+      "x": 18,
+      "z": -6,
+      "width": 20,
+      "depth": 14,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-8",
+      "name": "Bloc 8",
+      "x": 35,
+      "z": -14,
+      "width": 10,
+      "depth": 18,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-9",
+      "name": "Bloc 9",
+      "x": 42,
+      "z": -6,
+      "width": 8,
+      "depth": 10,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-10",
+      "name": "Bloc 10",
+      "x": 18,
+      "z": 10,
+      "width": 16,
+      "depth": 8,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-11",
+      "name": "Bloc 11",
+      "x": 34,
+      "z": 8,
+      "width": 12,
+      "depth": 14,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-12",
+      "name": "Bloc 12",
+      "x": 50,
+      "z": 2,
+      "width": 10,
+      "depth": 20,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-13",
+      "name": "Bloc 13",
+      "x": 10,
+      "z": 22,
+      "width": 14,
+      "depth": 12,
+      "height": 8,
+      "rooms": []
+    },
+    {
+      "id": "bloc-14",
+      "name": "Bloc 14",
+      "x": 28,
+      "z": 22,
+      "width": 10,
+      "depth": 10,
+      "height": 8,
+      "rooms": []
+    }
+  ],
+  "roads": []
+}
