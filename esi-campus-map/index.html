@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campus 3D Viewer (Serverless)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    .building-label {
+      background: rgba(0, 20, 30, 0.9);
+      border: 1px solid #00ffff;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-family: 'Monospace', monospace;
+      font-size: 13px;
+      color: #00ffff;
+      text-shadow: 0 0 8px #00ffff, 0 0 16px #00ffff;
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+      box-shadow: 0 0 12px rgba(0, 255, 255, 0.3);
+    }
+    .building-label::before { content: '\25C6 '; color: #00ffff; animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+    .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ffff; font-family: monospace; font-size: 16px; text-shadow: 0 0 10px #00ffff; }
+    .side-panel { position: fixed; top: 0; right: 0; width: 320px; height: 100vh; background: linear-gradient(180deg, #0a1520 0%, #050a10 100%); border-left: 1px solid #00ffff33; box-shadow: -4px 0 24px rgba(0, 0, 0, 0.8), inset 1px 0 0 #00ffff22; transform: translateX(100%); transition: transform 0.3s ease; z-index: 100; display: flex; flex-direction: column; overflow: hidden; }
+    .side-panel.open { transform: translateX(0); }
+    .panel-header { padding: 16px 20px; border-bottom: 1px solid #00ffff33; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 255, 0.03); }
+    .panel-title { font-family: 'Monospace', monospace; font-size: 14px; color: #00ffff; text-transform: uppercase; letter-spacing: 1px; }
+    .panel-close { background: none; border: 1px solid #00ffff44; color: #00ffff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 12px; transition: all 0.2s; }
+    .panel-close:hover { background: rgba(0, 255, 255, 0.1); border-color: #00ffff; box-shadow: 0 0 12px rgba(0, 255, 255, 0.3); }
+    .panel-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .building-info { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #00ffff22; }
+    .building-name { font-size: 18px; font-weight: 600; color: #00ffff; margin-bottom: 4px; text-shadow: 0 0 8px #00ffff; }
+    .building-meta { font-size: 12px; color: #00ffff99; font-family: monospace; }
+    .rooms-list { display: flex; flex-direction: column; gap: 8px; }
+    .room-item { background: rgba(0, 255, 255, 0.04); border: 1px solid #00ffff11; border-radius: 6px; padding: 12px 16px; transition: all 0.2s; cursor: default; }
+    .room-item:hover { border-color: #00ffff44; background: rgba(0, 255, 255, 0.08); box-shadow: 0 0 12px rgba(0, 255, 255, 0.1); }
+    .room-item.highlighted { border-color: #00ffff; background: rgba(0, 255, 255, 0.15); box-shadow: 0 0 20px rgba(0, 255, 255, 0.4); animation: highlight-pulse 1s ease-in-out 3; }
+    @keyframes highlight-pulse { 0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.4); } 50% { box-shadow: 0 0 30px rgba(0, 255, 255, 0.7); } }
+    .room-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .room-name { font-size: 14px; font-weight: 500; color: #e0ffff; }
+    .room-type { font-size: 11px; text-transform: uppercase; color: #00ffff; background: rgba(0, 255, 255, 0.1); padding: 2px 8px; border-radius: 3px; font-family: monospace; letter-spacing: 0.5px; }
+    .room-id { font-size: 11px; color: #00ffff66; font-family: monospace; }
+    .empty-state { color: #00ffff44; font-style: italic; text-align: center; padding: 40px 20px; }
+    .panel-hint { position: fixed; bottom: 24px; left: 24px; color: #00ffff66; font-size: 12px; font-family: monospace; pointer-events: none; opacity: 0.7; }
+    .search-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 200; width: 400px; max-width: 90vw; }
+    .search-input { width: 100%; padding: 12px 16px; background: rgba(0, 20, 30, 0.9); border: 1px solid #00ffff44; border-radius: 6px; color: #00ffff; font-family: 'Monospace', monospace; font-size: 14px; outline: none; transition: all 0.2s; box-shadow: 0 0 12px rgba(0, 0, 0, 0.5); }
+    .search-input::placeholder { color: #00ffff66; }
+    .search-input:focus { border-color: #00ffff; box-shadow: 0 0 20px rgba(0, 255, 255, 0.3); }
+    .search-dropdown { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: rgba(0, 15, 25, 0.95); border: 1px solid #00ffff33; border-radius: 6px; max-height: 300px; overflow-y: auto; display: none; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8); }
+    .search-dropdown.visible { display: block; }
+    .search-result { padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #00ffff11; transition: background 0.15s; }
+    .search-result:last-child { border-bottom: none; }
+    .search-result:hover { background: rgba(0, 255, 255, 0.08); }
+    .search-result-type { font-size: 10px; text-transform: uppercase; color: #00ffff66; font-family: monospace; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .search-result-name { font-size: 14px; color: #e0ffff; }
+    .search-result-building { font-size: 11px; color: #00ffff99; margin-top: 2px; }
+    .search-no-results { padding: 16px; color: #00ffff44; font-style: italic; text-align: center; font-size: 13px; }
+    /* Satellite underlay controls */
+    .sat-toggle { position: fixed; bottom: 24px; right: 24px; z-index: 200; background: rgba(0,20,30,0.9); border: 1px solid #00ffff44; color: #00ffff; padding: 8px 14px; border-radius: 6px; font-family: monospace; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .sat-toggle:hover, .sat-toggle.active { border-color: #00ffff; box-shadow: 0 0 12px rgba(0,255,255,0.3); background: rgba(0,255,255,0.1); }
+    .sat-calibration { position: fixed; bottom: 60px; right: 24px; z-index: 200; background: rgba(0,15,25,0.95); border: 1px solid #00ffff33; border-radius: 6px; padding: 14px 16px; display: none; flex-direction: column; gap: 8px; min-width: 230px; box-shadow: 0 8px 32px rgba(0,0,0,0.8); }
+    .sat-calibration.visible { display: flex; }
+    .sat-calibration label { font-family: monospace; font-size: 11px; color: #00ffff99; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .sat-calibration input[type=range] { flex: 1; accent-color: #00ffff; }
+    .sat-calibration .val { color: #00ffff; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+    /* Level Editor */
+    .edit-toolbar { position: fixed; top: 20px; left: 20px; z-index: 200; display: flex; flex-direction: column; gap: 6px; }
+    .edit-btn { background: rgba(0,20,30,0.9); border: 1px solid #00ffff44; color: #00ffff; padding: 7px 12px; border-radius: 5px; font-family: monospace; font-size: 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .edit-btn:hover { border-color: #00ffff; box-shadow: 0 0 10px rgba(0,255,255,0.3); }
+    .edit-btn.active { background: rgba(0,255,255,0.15); border-color: #00ffff; box-shadow: 0 0 12px rgba(0,255,255,0.4); }
+    .edit-btn.danger { border-color: #ff444444; color: #ff6666; }
+    .edit-btn.danger:hover { border-color: #ff4444; box-shadow: 0 0 10px rgba(255,68,68,0.3); }
+    .edit-tools { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: rgba(0,15,25,0.95); border: 1px solid #00ffff33; border-radius: 6px; }
+    .edit-tools-row { display: flex; gap: 4px; }
+    .edit-form { position: fixed; top: 20px; left: 220px; z-index: 200; background: rgba(0,15,25,0.95); border: 1px solid #00ffff33; border-radius: 6px; padding: 14px 16px; display: none; flex-direction: column; gap: 8px; min-width: 200px; box-shadow: 0 8px 32px rgba(0,0,0,0.8); }
+    .edit-form.visible { display: flex; }
+    .edit-form label { font-family: monospace; font-size: 11px; color: #00ffff99; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .edit-form input[type=text], .edit-form input[type=number] { background: rgba(0,20,30,0.9); border: 1px solid #00ffff44; border-radius: 4px; color: #00ffff; padding: 4px 8px; font-family: monospace; font-size: 12px; width: 100px; outline: none; }
+    .edit-form input:focus { border-color: #00ffff; }
+    .edit-form .info { font-family: monospace; font-size: 11px; color: #00ffff66; }
+    .edit-hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 200; background: rgba(0,20,30,0.9); border: 1px solid #00ffff44; border-radius: 5px; padding: 6px 14px; font-family: monospace; font-size: 12px; color: #00ffff; pointer-events: none; display: none; }
+    .edit-hint.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">LOADING CAMPUS DATA...</div>
+
+  <!-- Search Bar -->
+  <div class="search-container">
+    <input type="text" class="search-input" id="searchInput" placeholder="Search buildings or rooms..." autocomplete="off">
+    <div class="search-dropdown" id="searchDropdown"></div>
+  </div>
+
+  <!-- Side Panel -->
+  <div class="side-panel" id="sidePanel">
+    <div class="panel-header">
+      <span class="panel-title" id="panelTitle">BUILDING DETAILS</span>
+      <button class="panel-close" id="panelClose">CLOSE</button>
+    </div>
+    <div class="panel-content" id="panelContent">
+      <div class="empty-state">Click a building to view rooms</div>
+    </div>
+  </div>
+
+  <div class="panel-hint">Click a building to inspect</div>
+
+  <!-- Satellite underlay controls -->
+  <button class="sat-toggle" id="satToggle" title="Toggle satellite underlay" style="display:none">🛰 SAT</button>
+  <div class="sat-calibration" id="satCalibration">
+    <label>Width <input type="range" id="satWidth" min="50" max="400" step="1"><span class="val" id="satWidthVal"></span></label>
+    <label>Depth <input type="range" id="satDepth" min="50" max="400" step="1"><span class="val" id="satDepthVal"></span></label>
+    <label>Offset X <input type="range" id="satOffX" min="-100" max="100" step="0.5"><span class="val" id="satOffXVal"></span></label>
+    <label>Offset Z <input type="range" id="satOffZ" min="-100" max="100" step="0.5"><span class="val" id="satOffZVal"></span></label>
+    <label>Rotation° <input type="range" id="satRot" min="-180" max="180" step="0.5"><span class="val" id="satRotVal"></span></label>
+  </div>
+
+  <!-- Level Editor (only visible with ?edit=1) -->
+  <div id="editToolbar" class="edit-toolbar" style="display:none">
+    <button id="editToggle" class="edit-btn">✏️ EDIT</button>
+    <div id="editTools" class="edit-tools" style="display:none">
+      <div class="edit-tools-row">
+        <button id="selectModeBtn" class="edit-btn active">👆 Select</button>
+        <button id="drawBuildingBtn" class="edit-btn">🏢 Building</button>
+        <button id="drawRoadBtn" class="edit-btn">🛤️ Road</button>
+      </div>
+      <div class="edit-tools-row">
+        <button id="exportBtn" class="edit-btn">💾 Export</button>
+        <button id="importBtn" class="edit-btn">📂 Import</button>
+        <button id="resetBtn" class="edit-btn danger">🔄 Reset</button>
+      </div>
+    </div>
+  </div>
+  <div id="editForm" class="edit-form">
+    <div id="editBuildingForm">
+      <label>ID <input type="text" id="editId"></label>
+      <label>Name <input type="text" id="editName"></label>
+      <label>Height <input type="number" id="editHeight" min="1" step="1"></label>
+      <label>Rotation <input type="number" id="editRotation" step="1"></label>
+      <div class="info" id="editFpInfo"></div>
+    </div>
+    <div id="editRoadForm" style="display:none">
+      <label>ID <input type="text" id="editRoadId"></label>
+      <label>Width <input type="number" id="editRoadWidth" min="1" step="0.5"></label>
+      <div class="info" id="editPathInfo"></div>
+    </div>
+  </div>
+  <div id="editHint" class="edit-hint"></div>
+  <input type="file" id="importFile" accept=".json" style="display:none">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Embedded campus data - no server needed!
+    let CAMPUS_DATA = {
+      "buildings": [
+        { "id": "bloc-1",  "name": "Bloc 1",  "x": -65, "z": -10, "width": 18, "depth": 30, "height": 8, "rooms": [] },
+        { "id": "bloc-2",  "name": "Bloc 2",  "x": -42, "z": -5,  "width": 8,  "depth": 12, "height": 8, "rooms": [] },
+        { "id": "bloc-3",  "name": "Bloc 3",  "x": -32, "z": -5,  "width": 8,  "depth": 10, "height": 8, "rooms": [] },
+        { "id": "bloc-4",  "name": "Bloc 4",  "x": -22, "z": -5,  "width": 8,  "depth": 10, "height": 8, "rooms": [] },
+        { "id": "bloc-5",  "name": "Bloc 5",  "x": -8,  "z": 2,   "width": 12, "depth": 14, "height": 8, "rooms": [] },
+        { "id": "bloc-6",  "name": "Bloc 6",  "x": 10,  "z": -18, "width": 22, "depth": 10, "height": 8, "rooms": [] },
+        { "id": "bloc-7",  "name": "Bloc 7",  "x": 18,  "z": -6,  "width": 20, "depth": 14, "height": 8, "rooms": [] },
+        { "id": "bloc-8",  "name": "Bloc 8",  "x": 35,  "z": -14, "width": 10, "depth": 18, "height": 8, "rooms": [] },
+        { "id": "bloc-9",  "name": "Bloc 9",  "x": 42,  "z": -6,  "width": 8,  "depth": 10, "height": 8, "rooms": [] },
+        { "id": "bloc-10", "name": "Bloc 10", "x": 18,  "z": 10,  "width": 16, "depth": 8,  "height": 8, "rooms": [] },
+        { "id": "bloc-11", "name": "Bloc 11", "x": 34,  "z": 8,   "width": 12, "depth": 14, "height": 8, "rooms": [] },
+        { "id": "bloc-12", "name": "Bloc 12", "x": 50,  "z": 2,   "width": 10, "depth": 20, "height": 8, "rooms": [] },
+        { "id": "bloc-13", "name": "Bloc 13", "x": 10,  "z": 22,  "width": 14, "depth": 12, "height": 8, "rooms": [] },
+        { "id": "bloc-14", "name": "Bloc 14", "x": 28,  "z": 22,  "width": 10, "depth": 10, "height": 8, "rooms": [] }
+      ],
+      "roads": []
+    };
+
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(0, 30, 50);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    document.body.appendChild(labelRenderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 10;
+    controls.maxDistance = 200;
+    controls.maxPolarAngle = Math.PI / 2 - 0.01;
+
+    const gridHelper = new THREE.GridHelper(200, 40, 0x003333, 0x001111);
+    scene.add(gridHelper);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+    // --- Dot-Grid Particle Field ---
+    function createDotGrid() {
+      const gridSize = 200;
+      const divisions = 50;
+      const step = gridSize / divisions;
+      const half = gridSize / 2;
+      const dotCount = (divisions + 1) * (divisions + 1);
+      const positions = new Float32Array(dotCount * 3);
+      let idx = 0;
+      for (let i = 0; i <= divisions; i++) {
+        for (let j = 0; j <= divisions; j++) {
+          positions[idx++] = -half + i * step;
+          positions[idx++] = 0.01;
+          positions[idx++] = -half + j * step;
+        }
+      }
+      const dotGeometry = new THREE.BufferGeometry();
+      dotGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const dotMaterial = new THREE.PointsMaterial({
+        color: 0x00ffff,
+        size: 0.15,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.4,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const dots = new THREE.Points(dotGeometry, dotMaterial);
+      scene.add(dots);
+      return dots;
+    }
+    const dotGrid = createDotGrid();
+
+    // --- Helpers: footprint backward compat + centroid ---
+    function ensureFootprint(b) {
+      if (!b.footprint) {
+        const w = b.width || 10, d = b.depth || 10;
+        b.footprint = [[-w/2,-d/2],[w/2,-d/2],[w/2,d/2],[-w/2,d/2]];
+        delete b.width; delete b.depth;
+      }
+      if (b.rotation === undefined) b.rotation = 0;
+      return b;
+    }
+
+    function polygonCentroid(fp) {
+      let cx = 0, cz = 0;
+      for (const [x, z] of fp) { cx += x; cz += z; }
+      return [cx / fp.length, cz / fp.length];
+    }
+
+    function footprintBounds(fp) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const [x, z] of fp) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+      }
+      return { minX, maxX, minZ, maxZ, w: maxX - minX, d: maxZ - minZ };
+    }
+
+    // --- Satellite Underlay ---
+    const SAT_STORAGE_KEY = 'esi-campus-sat-calibration';
+    const satDefaults = { width: 200, depth: 120, offX: 0, offZ: 0, rot: 0 };
+    let satCalib = Object.assign({}, satDefaults);
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAT_STORAGE_KEY));
+      if (saved) Object.assign(satCalib, saved);
+    } catch (_) {}
+
+    let satPlane = null;
+    let satVisible = false;
+
+    function createSatellitePlane() {
+      const loader = new THREE.TextureLoader();
+      loader.load('assets/satellite.png', (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const geo = new THREE.PlaneGeometry(1, 1);
+        const mat = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 0.55,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          color: 0x888888          // darkens the image
+        });
+        satPlane = new THREE.Mesh(geo, mat);
+        satPlane.rotation.x = -Math.PI / 2;   // lay flat
+        satPlane.position.y = 0.05;            // just above ground
+        satPlane.visible = satVisible;
+        applySatCalibration();
+        scene.add(satPlane);
+      }, undefined, (err) => {
+        console.warn('Could not load satellite.png:', err);
+      });
+    }
+
+    function applySatCalibration() {
+      if (!satPlane) return;
+      satPlane.scale.set(satCalib.width, satCalib.depth, 1);
+      satPlane.position.x = satCalib.offX;
+      satPlane.position.z = satCalib.offZ;
+      satPlane.rotation.z = THREE.MathUtils.degToRad(satCalib.rot);
+    }
+
+    function saveSatCalibration() {
+      localStorage.setItem(SAT_STORAGE_KEY, JSON.stringify(satCalib));
+    }
+
+    // Wire up UI
+    const satToggleBtn = document.getElementById('satToggle');
+    const satCalibPanel = document.getElementById('satCalibration');
+    const satSliders = {
+      width: document.getElementById('satWidth'),
+      depth: document.getElementById('satDepth'),
+      offX:  document.getElementById('satOffX'),
+      offZ:  document.getElementById('satOffZ'),
+      rot:   document.getElementById('satRot')
+    };
+    const satVals = {
+      width: document.getElementById('satWidthVal'),
+      depth: document.getElementById('satDepthVal'),
+      offX:  document.getElementById('satOffXVal'),
+      offZ:  document.getElementById('satOffZVal'),
+      rot:   document.getElementById('satRotVal')
+    };
+
+    function syncSatUI() {
+      satSliders.width.value = satCalib.width;
+      satSliders.depth.value = satCalib.depth;
+      satSliders.offX.value  = satCalib.offX;
+      satSliders.offZ.value  = satCalib.offZ;
+      satSliders.rot.value   = satCalib.rot;
+      satVals.width.textContent = satCalib.width;
+      satVals.depth.textContent = satCalib.depth;
+      satVals.offX.textContent  = satCalib.offX;
+      satVals.offZ.textContent  = satCalib.offZ;
+      satVals.rot.textContent   = satCalib.rot + '°';
+    }
+    syncSatUI();
+
+    // Satellite toggle is now controlled by edit mode enter/exit — standalone toggle disabled
+    // satToggleBtn click handler removed
+
+    Object.entries(satSliders).forEach(([key, slider]) => {
+      slider.addEventListener('input', () => {
+        satCalib[key] = parseFloat(slider.value);
+        satVals[key].textContent = slider.value + (key === 'rot' ? '°' : '');
+        applySatCalibration();
+        saveSatCalibration();
+      });
+    });
+
+    createSatellitePlane();
+
+    // --- Fuzzy Matching ---
+    function fuzzyMatch(query, text) {
+      if (!query || !text) return false;
+      const q = query.toLowerCase().trim();
+      const t = text.toLowerCase();
+      if (t.includes(q)) return true;
+      let qi = 0;
+      for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+        if (t[ti] === q[qi]) qi++;
+      }
+      return qi === q.length;
+    }
+
+    function fuzzyScore(query, text) {
+      if (!query || !text) return 0;
+      const q = query.toLowerCase().trim();
+      const t = text.toLowerCase();
+      if (t === q) return 100;
+      if (t.startsWith(q)) return 80;
+      if (t.includes(q)) return 60;
+      let qi = 0, matches = 0;
+      for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+        if (t[ti] === q[qi]) { qi++; matches++; }
+      }
+      if (qi === q.length) return 30 + (matches / t.length) * 20;
+      return 0;
+    }
+
+    // --- Search Logic ---
+    const searchInput = document.getElementById('searchInput');
+    const searchDropdown = document.getElementById('searchDropdown');
+
+    function performSearch(query) {
+      if (!query || !query.trim()) {
+        searchDropdown.classList.remove('visible');
+        return;
+      }
+
+      const results = [];
+      CAMPUS_DATA.buildings.forEach(building => {
+        const buildingScore = fuzzyScore(query, building.name);
+        if (buildingScore > 0) {
+          results.push({
+            type: 'building',
+            building: building,
+            name: building.name,
+            score: buildingScore,
+            matchedRoom: null
+          });
+        }
+        (building.rooms || []).forEach(room => {
+          const roomScore = fuzzyScore(query, room.name);
+          if (roomScore > 0) {
+            results.push({
+              type: 'room',
+              building: building,
+              name: room.name,
+              score: roomScore,
+              matchedRoom: room
+            });
+          }
+        });
+      });
+
+      results.sort((a, b) => b.score - a.score);
+
+      if (results.length === 0) {
+        searchDropdown.innerHTML = '<div class="search-no-results">No matches found</div>';
+      } else {
+        searchDropdown.innerHTML = results.map((r, i) => `
+          <div class="search-result" data-index="${i}">
+            <div class="search-result-type">${r.type === 'building' ? 'Building' : 'Room'}</div>
+            <div class="search-result-name">${r.name}</div>
+            ${r.type === 'room' ? `<div class="search-result-building">in ${r.building.name}</div>` : ''}
+          </div>
+        `).join('');
+
+        searchDropdown.querySelectorAll('.search-result').forEach((el, i) => {
+          el.addEventListener('click', () => {
+            selectSearchResult(results[i]);
+          });
+        });
+      }
+      searchDropdown.classList.add('visible');
+    }
+
+    function selectSearchResult(result) {
+      searchDropdown.classList.remove('visible');
+      searchInput.value = result.name;
+
+      flyToBuilding(result.building);
+      openPanel(result.building, result.matchedRoom);
+    }
+
+    // --- Camera Fly-to Animation ---
+    let flyAnimation = null;
+
+    function flyToBuilding(building) {
+      ensureFootprint(building);
+      const fp = building.footprint;
+      const c = polygonCentroid(fp);
+      const rot = THREE.MathUtils.degToRad(building.rotation || 0);
+      const cosR = Math.cos(rot), sinR = Math.sin(rot);
+      const cx = building.x + cosR * c[0] - sinR * c[1];
+      const cz = building.z + sinR * c[0] + cosR * c[1];
+      const bounds = footprintBounds(fp);
+
+      const targetPos = new THREE.Vector3(cx, building.height / 2, cz);
+      const span = Math.max(bounds.w, bounds.d, 10);
+      const offset = new THREE.Vector3(span * 0.8, building.height * 0.6, span * 0.8);
+      const endPos = targetPos.clone().add(offset);
+
+      flyAnimation = {
+        startPos: camera.position.clone(),
+        startTarget: controls.target.clone(),
+        endPos: endPos,
+        endTarget: targetPos,
+        startTime: performance.now(),
+        duration: 1200
+      };
+    }
+
+    function updateFlyAnimation() {
+      if (!flyAnimation) return;
+
+      const elapsed = performance.now() - flyAnimation.startTime;
+      let t = Math.min(elapsed / flyAnimation.duration, 1);
+
+      t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      camera.position.lerpVectors(flyAnimation.startPos, flyAnimation.endPos, t);
+      controls.target.lerpVectors(flyAnimation.startTarget, flyAnimation.endTarget, t);
+      controls.update();
+
+      if (t >= 1) flyAnimation = null;
+    }
+
+    // --- Building Creation (extruded polygon footprint) ---
+    function createBuildingMesh(building) {
+      ensureFootprint(building);
+      const { height, footprint, rotation } = building;
+      const group = new THREE.Group();
+      group.userData = { building, isBuilding: true };
+
+      // Build THREE.Shape from footprint (local coords → shape XY, negate Z for rotation)
+      const shape = new THREE.Shape();
+      shape.moveTo(footprint[0][0], -footprint[0][1]);
+      for (let i = 1; i < footprint.length; i++) {
+        shape.lineTo(footprint[i][0], -footprint[i][1]);
+      }
+      shape.closePath();
+
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+      geometry.rotateX(-Math.PI / 2); // lay flat: extrusion now goes along +Y
+
+      const edgesGeometry = new THREE.EdgesGeometry(geometry, 1);
+
+      const edgeMaterial = new THREE.LineBasicMaterial({
+        color: 0x00ffff, transparent: true, opacity: 0.9
+      });
+      const edges = new THREE.LineSegments(edgesGeometry, edgeMaterial);
+      group.add(edges);
+
+      const fillMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ffff, transparent: true, opacity: 0.08,
+        side: THREE.DoubleSide, depthWrite: false
+      });
+      const fill = new THREE.Mesh(geometry, fillMaterial);
+      fill.userData = { building, isBuilding: true };
+      group.add(fill);
+
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ffff, transparent: true, opacity: 0.05,
+        side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending
+      });
+      const glow = new THREE.Mesh(geometry.clone(), glowMaterial);
+      glow.scale.setScalar(1.02);
+      group.add(glow);
+
+      // Position + rotation
+      group.position.set(building.x, 0, building.z);
+      group.rotation.y = THREE.MathUtils.degToRad(rotation || 0);
+
+      // Label at centroid
+      const c = polygonCentroid(footprint);
+      const labelHeight = height + 4;
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        c[0], height, c[1],  c[0], labelHeight, c[1]
+      ]), 3));
+      const connectorLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({
+        color: 0x00ffff, transparent: true, opacity: 0.3
+      }));
+      group.add(connectorLine);
+
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'building-label';
+      labelDiv.textContent = building.name.toUpperCase();
+      const label = new CSS2DObject(labelDiv);
+      label.position.set(c[0], labelHeight + 0.5, c[1]);
+      group.add(label);
+
+      registerBuildingMesh(fill);
+      return group;
+    }
+
+    // --- Road Creation (flat ribbon) ---
+    function createRoadMesh(road) {
+      const halfW = (road.width || 6) / 2;
+      const path = road.path;
+      if (!path || path.length < 2) return null;
+      const verts = [], idx = [];
+      for (let i = 0; i < path.length; i++) {
+        let dx, dz;
+        if (i < path.length - 1) { dx = path[i+1][0] - path[i][0]; dz = path[i+1][1] - path[i][1]; }
+        else { dx = path[i][0] - path[i-1][0]; dz = path[i][1] - path[i-1][1]; }
+        const len = Math.hypot(dx, dz) || 1;
+        const px = -dz / len, pz = dx / len;
+        verts.push(
+          path[i][0] + px * halfW, 0.08, path[i][1] + pz * halfW,
+          path[i][0] - px * halfW, 0.08, path[i][1] - pz * halfW
+        );
+      }
+      for (let i = 0; i < path.length - 1; i++) {
+        const a = i*2, b = i*2+1, c = (i+1)*2, d = (i+1)*2+1;
+        idx.push(a, c, b, b, c, d);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0x888888, transparent: true, opacity: 0.35,
+        depthWrite: false, side: THREE.DoubleSide
+      }));
+      mesh.userData = { road, isRoad: true };
+      return mesh;
+    }
+
+    // Raycaster setup
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedBuilding = null;
+    const buildingMeshes = [];
+    const buildingGroups = [];
+    const roadMeshes = [];
+    let allBuildings = CAMPUS_DATA.buildings;
+
+    // Populate buildingMeshes during creation
+    function registerBuildingMesh(mesh) {
+      buildingMeshes.push(mesh);
+    }
+
+    // --- Side Panel Logic ---
+    const sidePanel = document.getElementById('sidePanel');
+    const panelContent = document.getElementById('panelContent');
+    const panelClose = document.getElementById('panelClose');
+
+    function openPanel(building, highlightRoom = null) {
+      selectedBuilding = building;
+      const rooms = building.rooms || [];
+
+      let html = `
+        <div class="building-info">
+          <div class="building-name">${building.name.toUpperCase()}</div>
+          <div class="building-meta">
+            ID: ${building.id} • ${(building.footprint||[]).length} vertices • h=${building.height}m • ${rooms.length} room${rooms.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <div class="rooms-list">
+      `;
+
+      if (rooms.length === 0) {
+        html += '<div class="empty-state">No rooms defined</div>';
+      } else {
+        rooms.forEach(room => {
+          const isHighlighted = highlightRoom && room.id === highlightRoom.id;
+          html += `
+            <div class="room-item${isHighlighted ? ' highlighted' : ''}" data-room-id="${room.id}">
+              <div class="room-header">
+                <span class="room-name">${room.name}</span>
+                <span class="room-type">${room.type}</span>
+              </div>
+              <div class="room-id">${room.id}</div>
+            </div>
+          `;
+        });
+      }
+
+      html += '</div>';
+      panelContent.innerHTML = html;
+      sidePanel.classList.add('open');
+
+      if (highlightRoom) {
+        setTimeout(() => {
+          const el = panelContent.querySelector(`[data-room-id="${highlightRoom.id}"]`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+    }
+
+    function closePanel() {
+      selectedBuilding = null;
+      sidePanel.classList.remove('open');
+      panelContent.innerHTML = '<div class="empty-state">Click a building to view rooms</div>';
+    }
+
+    panelClose.addEventListener('click', closePanel);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePanel();
+    });
+
+    // --- Mouse Interaction ---
+    function onMouseMove(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    function onClick(event) {
+      if (event.target.closest('.side-panel')) return;
+      if (event.target.closest('.search-container')) return;
+      if (event.target.closest('.sat-toggle') || event.target.closest('.sat-calibration')) return;
+      if (event.target.closest('.edit-toolbar') || event.target.closest('.edit-form')) return;
+
+      raycaster.setFromCamera(mouse, camera);
+      // Raycast against building fill meshes
+      // We need to have collected them during creation
+      // We'll rebuild this after creating all meshes
+      if (buildingMeshes.length > 0) {
+        const intersects = raycaster.intersectObjects(buildingMeshes, false);
+
+        if (intersects.length > 0) {
+          const hitMesh = intersects[0].object;
+          const building = hitMesh.userData.building;
+          openPanel(building);
+        } else {
+          closePanel();
+        }
+      }
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('click', onClick);
+
+    // --- Search Input Events ---
+    searchInput.addEventListener('input', (e) => {
+      performSearch(e.target.value);
+    });
+
+    searchInput.addEventListener('focus', (e) => {
+      if (e.target.value) performSearch(e.target.value);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-container')) {
+        searchDropdown.classList.remove('visible');
+      }
+    });
+
+    // --- Rebuild Campus (tear down + recreate from data) ---
+    function rebuildCampus(data) {
+      // Remove existing building groups from scene
+      buildingGroups.forEach(group => {
+        group.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+            else child.material.dispose();
+          }
+          if (child.isCSS2DObject && child.element) child.element.remove();
+        });
+        scene.remove(group);
+      });
+      buildingGroups.length = 0;
+      buildingMeshes.length = 0;
+
+      // Remove existing roads
+      roadMeshes.forEach(m => { if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); scene.remove(m); });
+      roadMeshes.length = 0;
+
+      // Update data references
+      CAMPUS_DATA = data;
+      if (!CAMPUS_DATA.roads) CAMPUS_DATA.roads = [];
+      allBuildings = data.buildings;
+
+      // Backward-compat + rebuild all buildings
+      data.buildings.forEach(b => {
+        ensureFootprint(b);
+        const group = createBuildingMesh(b);
+        scene.add(group);
+        buildingGroups.push(group);
+      });
+
+      // Rebuild roads
+      (data.roads || []).forEach(r => {
+        const mesh = createRoadMesh(r);
+        if (mesh) { scene.add(mesh); roadMeshes.push(mesh); }
+      });
+    }
+
+    // --- Load Campus Data (draft > campus.json > embedded) ---
+    const DRAFT_KEY = 'esi-campus-draft';
+
+    async function loadCampus() {
+      // 1. Check localStorage draft first
+      try {
+        const draft = JSON.parse(localStorage.getItem(DRAFT_KEY));
+        if (draft && draft.buildings) {
+          CAMPUS_DATA = draft;
+          console.log('Loaded draft from localStorage');
+        }
+      } catch (_) {}
+
+      // 2. If no draft, try campus.json
+      if (!localStorage.getItem(DRAFT_KEY)) {
+        try {
+          const res = await fetch('campus.json');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          CAMPUS_DATA = data;
+          console.log('Loaded campus.json from server');
+        } catch (e) {
+          console.warn('Could not fetch campus.json, using embedded data:', e.message);
+        }
+      }
+
+      rebuildCampus(CAMPUS_DATA);
+
+      // Frame camera around all buildings (polygon-aware)
+      const buildings = CAMPUS_DATA.buildings;
+      if (buildings.length > 0) {
+        const bounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, maxHeight: 0 };
+        buildings.forEach(b => {
+          ensureFootprint(b);
+          const rot = THREE.MathUtils.degToRad(b.rotation || 0);
+          const cosR = Math.cos(rot), sinR = Math.sin(rot);
+          for (const [vx, vz] of b.footprint) {
+            const wx = b.x + cosR * vx - sinR * vz;
+            const wz = b.z + sinR * vx + cosR * vz;
+            bounds.minX = Math.min(bounds.minX, wx);
+            bounds.maxX = Math.max(bounds.maxX, wx);
+            bounds.minZ = Math.min(bounds.minZ, wz);
+            bounds.maxZ = Math.max(bounds.maxZ, wz);
+          }
+          bounds.maxHeight = Math.max(bounds.maxHeight, b.height);
+        });
+
+        const centerX = (bounds.minX + bounds.maxX) / 2;
+        const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+        const spanX = bounds.maxX - bounds.minX;
+        const spanZ = bounds.maxZ - bounds.minZ;
+        const maxSpan = Math.max(spanX, spanZ);
+        const distance = maxSpan * 1.2 + bounds.maxHeight;
+
+        controls.target.set(centerX, bounds.maxHeight / 2, centerZ);
+        camera.position.set(centerX, distance * 0.7, centerZ + distance * 0.8);
+        controls.update();
+      }
+
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    // --- Level Editor ---
+    const EDIT_ENABLED = new URLSearchParams(window.location.search).has('edit');
+    let editActive = false;
+    let editorDrawMode = null; // null = select, 'building', 'road'
+    let drawPoints = [];       // points being drawn
+    let drawPreviewLine = null;
+    let editorSelected = null; // { type: 'building'|'road', data, index }
+    let editorHandles = [];    // vertex handle meshes
+    let editorRotHandle = null;
+    let editorDrag = null;     // { type: 'move'|'vertex'|'rotate', startWorld, ... }
+    let savedCameraState = null;
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    function getGroundPoint(mx, my) {
+      const ndc = new THREE.Vector2(mx, my);
+      raycaster.setFromCamera(ndc, camera);
+      const target = new THREE.Vector3();
+      raycaster.ray.intersectPlane(groundPlane, target);
+      return target;
+    }
+
+    // Autosave
+    function autosaveDraft() {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(CAMPUS_DATA));
+    }
+
+    // Show/hide edit hint
+    const editHintEl = document.getElementById('editHint');
+    function showHint(msg) { editHintEl.textContent = msg; editHintEl.classList.toggle('visible', !!msg); }
+
+    // --- Editor UI wiring ---
+    if (EDIT_ENABLED) {
+      document.getElementById('editToolbar').style.display = 'flex';
+
+      const editToggleBtn = document.getElementById('editToggle');
+      const editToolsDiv = document.getElementById('editTools');
+      const editFormDiv = document.getElementById('editForm');
+      const editBuildingForm = document.getElementById('editBuildingForm');
+      const editRoadForm = document.getElementById('editRoadForm');
+
+      editToggleBtn.addEventListener('click', () => {
+        editActive = !editActive;
+        editToggleBtn.classList.toggle('active', editActive);
+        editToolsDiv.style.display = editActive ? 'flex' : 'none';
+        if (editActive) {
+          // Save camera, switch to top-down
+          savedCameraState = { pos: camera.position.clone(), target: controls.target.clone(), polar: controls.maxPolarAngle };
+          const b = { minX: -100, maxX: 100, minZ: -100, maxZ: 100 };
+          CAMPUS_DATA.buildings.forEach(bl => {
+            ensureFootprint(bl);
+            b.minX = Math.min(b.minX, bl.x - 20); b.maxX = Math.max(b.maxX, bl.x + 20);
+            b.minZ = Math.min(b.minZ, bl.z - 20); b.maxZ = Math.max(b.maxZ, bl.z + 20);
+          });
+          const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+          controls.target.set(cx, 0, cz);
+          camera.position.set(cx, 120, cz + 0.01);
+          controls.maxPolarAngle = 0.15;
+          controls.update();
+          setDrawMode(null);
+          showHint('Select a tool to start editing');
+          // Show satellite underlay as tracing reference
+          satVisible = true;
+          if (satPlane) satPlane.visible = true;
+          satCalibPanel.classList.add('visible');
+        } else {
+          // Restore camera
+          if (savedCameraState) {
+            camera.position.copy(savedCameraState.pos);
+            controls.target.copy(savedCameraState.target);
+            controls.maxPolarAngle = savedCameraState.polar;
+            controls.update();
+          }
+          clearEditorSelection();
+          editFormDiv.classList.remove('visible');
+          showHint('');
+          cancelDraw();
+          // Hide satellite underlay when leaving edit mode
+          satVisible = false;
+          if (satPlane) satPlane.visible = false;
+          satCalibPanel.classList.remove('visible');
+        }
+      });
+
+      function setDrawMode(mode) {
+        editorDrawMode = mode;
+        cancelDraw();
+        clearEditorSelection();
+        document.getElementById('selectModeBtn').classList.toggle('active', mode === null);
+        document.getElementById('drawBuildingBtn').classList.toggle('active', mode === 'building');
+        document.getElementById('drawRoadBtn').classList.toggle('active', mode === 'road');
+        if (mode === 'building') showHint('Click to place polygon vertices, double-click or Enter to close shape');
+        else if (mode === 'road') showHint('Click to place road path points, double-click or Enter to finish');
+        else showHint('Click a building/road to select, drag to move');
+      }
+
+      document.getElementById('selectModeBtn').addEventListener('click', () => setDrawMode(null));
+      document.getElementById('drawBuildingBtn').addEventListener('click', () => setDrawMode('building'));
+      document.getElementById('drawRoadBtn').addEventListener('click', () => setDrawMode('road'));
+
+      // --- Drawing ---
+      function cancelDraw() {
+        drawPoints = [];
+        if (drawPreviewLine) { scene.remove(drawPreviewLine); drawPreviewLine.geometry.dispose(); drawPreviewLine.material.dispose(); drawPreviewLine = null; }
+      }
+
+      function updateDrawPreview(currentPt) {
+        if (drawPreviewLine) { scene.remove(drawPreviewLine); drawPreviewLine.geometry.dispose(); drawPreviewLine.material.dispose(); }
+        const pts = [...drawPoints];
+        if (currentPt) pts.push(currentPt);
+        if (pts.length < 2) { drawPreviewLine = null; return; }
+        const verts = [];
+        pts.forEach(p => verts.push(p[0], 0.15, p[1]));
+        // Close loop for building preview
+        if (editorDrawMode === 'building' && pts.length >= 3) { verts.push(pts[0][0], 0.15, pts[0][1]); }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        drawPreviewLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 }));
+        scene.add(drawPreviewLine);
+      }
+
+      function finishDrawBuilding() {
+        if (drawPoints.length < 3) { showHint('Need at least 3 points'); return; }
+        // Compute centroid to use as anchor, make footprint relative
+        const c = polygonCentroid(drawPoints);
+        const fp = drawPoints.map(p => [p[0] - c[0], p[1] - c[1]]);
+        const id = 'bloc-' + (CAMPUS_DATA.buildings.length + 1);
+        const building = { id, name: 'Bloc ' + (CAMPUS_DATA.buildings.length + 1), x: c[0], z: c[1], rotation: 0, height: 8, footprint: fp, rooms: [] };
+        CAMPUS_DATA.buildings.push(building);
+        cancelDraw();
+        rebuildCampus(CAMPUS_DATA);
+        autosaveDraft();
+        showHint('Building created! Click it to edit properties');
+      }
+
+      function finishDrawRoad() {
+        if (drawPoints.length < 2) { showHint('Need at least 2 points'); return; }
+        const id = 'road-' + ((CAMPUS_DATA.roads || []).length + 1);
+        const road = { id, width: 6, path: drawPoints.map(p => [p[0], p[1]]) };
+        if (!CAMPUS_DATA.roads) CAMPUS_DATA.roads = [];
+        CAMPUS_DATA.roads.push(road);
+        cancelDraw();
+        rebuildCampus(CAMPUS_DATA);
+        autosaveDraft();
+        showHint('Road created!');
+      }
+
+      // --- Selection + handles ---
+      function clearEditorSelection() {
+        editorSelected = null;
+        editorHandles.forEach(h => { scene.remove(h); h.geometry.dispose(); h.material.dispose(); });
+        editorHandles = [];
+        if (editorRotHandle) { scene.remove(editorRotHandle); editorRotHandle.geometry.dispose(); editorRotHandle.material.dispose(); editorRotHandle = null; }
+        editFormDiv.classList.remove('visible');
+      }
+
+      function selectBuilding(building) {
+        clearEditorSelection();
+        const idx = CAMPUS_DATA.buildings.indexOf(building);
+        if (idx < 0) return;
+        editorSelected = { type: 'building', data: building, index: idx };
+        ensureFootprint(building);
+
+        // Vertex handles
+        const rot = THREE.MathUtils.degToRad(building.rotation || 0);
+        const cosR = Math.cos(rot), sinR = Math.sin(rot);
+        building.footprint.forEach((v, vi) => {
+          const wx = building.x + cosR * v[0] - sinR * v[1];
+          const wz = building.z + sinR * v[0] + cosR * v[1];
+          const handleGeo = new THREE.SphereGeometry(0.6, 8, 8);
+          const handleMat = new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false });
+          const handle = new THREE.Mesh(handleGeo, handleMat);
+          handle.position.set(wx, 0.5, wz);
+          handle.userData = { isHandle: true, vertexIndex: vi };
+          handle.renderOrder = 999;
+          scene.add(handle);
+          editorHandles.push(handle);
+        });
+
+        // Rotation handle
+        const c = polygonCentroid(building.footprint);
+        const bounds = footprintBounds(building.footprint);
+        const rotDist = Math.max(bounds.w, bounds.d) / 2 + 4;
+        const rhx = building.x + cosR * (c[0] + rotDist) - sinR * c[1];
+        const rhz = building.z + sinR * (c[0] + rotDist) + cosR * c[1];
+        const rotGeo = new THREE.SphereGeometry(0.8, 8, 8);
+        const rotMat = new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false });
+        editorRotHandle = new THREE.Mesh(rotGeo, rotMat);
+        editorRotHandle.position.set(rhx, 0.5, rhz);
+        editorRotHandle.userData = { isRotHandle: true };
+        editorRotHandle.renderOrder = 999;
+        scene.add(editorRotHandle);
+
+        // Show edit form
+        editBuildingForm.style.display = 'block';
+        editRoadForm.style.display = 'none';
+        document.getElementById('editId').value = building.id;
+        document.getElementById('editName').value = building.name;
+        document.getElementById('editHeight').value = building.height;
+        document.getElementById('editRotation').value = building.rotation || 0;
+        document.getElementById('editFpInfo').textContent = `Footprint: ${building.footprint.length} vertices`;
+        editFormDiv.classList.add('visible');
+      }
+
+      function selectRoad(road) {
+        clearEditorSelection();
+        const idx = (CAMPUS_DATA.roads || []).indexOf(road);
+        if (idx < 0) return;
+        editorSelected = { type: 'road', data: road, index: idx };
+
+        // Path point handles
+        road.path.forEach((v, vi) => {
+          const handleGeo = new THREE.SphereGeometry(0.6, 8, 8);
+          const handleMat = new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false });
+          const handle = new THREE.Mesh(handleGeo, handleMat);
+          handle.position.set(v[0], 0.5, v[1]);
+          handle.userData = { isHandle: true, vertexIndex: vi };
+          handle.renderOrder = 999;
+          scene.add(handle);
+          editorHandles.push(handle);
+        });
+
+        // Show road edit form
+        editBuildingForm.style.display = 'none';
+        editRoadForm.style.display = 'block';
+        document.getElementById('editRoadId').value = road.id;
+        document.getElementById('editRoadWidth').value = road.width || 6;
+        document.getElementById('editPathInfo').textContent = `Path: ${road.path.length} points`;
+        editFormDiv.classList.add('visible');
+      }
+
+      // --- Form input handlers ---
+      ['editId', 'editName'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+          if (!editorSelected || editorSelected.type !== 'building') return;
+          const b = editorSelected.data;
+          b.id = document.getElementById('editId').value;
+          b.name = document.getElementById('editName').value;
+          rebuildCampus(CAMPUS_DATA);
+          autosaveDraft();
+          selectBuilding(b);
+        });
+      });
+      document.getElementById('editHeight').addEventListener('change', () => {
+        if (!editorSelected || editorSelected.type !== 'building') return;
+        editorSelected.data.height = parseFloat(document.getElementById('editHeight').value) || 8;
+        rebuildCampus(CAMPUS_DATA);
+        autosaveDraft();
+        selectBuilding(editorSelected.data);
+      });
+      document.getElementById('editRotation').addEventListener('change', () => {
+        if (!editorSelected || editorSelected.type !== 'building') return;
+        editorSelected.data.rotation = parseFloat(document.getElementById('editRotation').value) || 0;
+        rebuildCampus(CAMPUS_DATA);
+        autosaveDraft();
+        selectBuilding(editorSelected.data);
+      });
+      document.getElementById('editRoadId').addEventListener('change', () => {
+        if (!editorSelected || editorSelected.type !== 'road') return;
+        editorSelected.data.id = document.getElementById('editRoadId').value;
+        autosaveDraft();
+      });
+      document.getElementById('editRoadWidth').addEventListener('change', () => {
+        if (!editorSelected || editorSelected.type !== 'road') return;
+        editorSelected.data.width = parseFloat(document.getElementById('editRoadWidth').value) || 6;
+        rebuildCampus(CAMPUS_DATA);
+        autosaveDraft();
+        selectRoad(editorSelected.data);
+      });
+
+      // --- Editor mouse interaction ---
+      let lastClickTime = 0;
+
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (!editActive || e.button !== 0) return;
+        if (e.target !== renderer.domElement) return;
+
+        const mx = (e.clientX / window.innerWidth) * 2 - 1;
+        const my = -(e.clientY / window.innerHeight) * 2 + 1;
+        const now = performance.now();
+        const isDouble = (now - lastClickTime) < 350;
+        lastClickTime = now;
+
+        const gp = getGroundPoint(mx, my);
+        if (!gp) return;
+
+        // Drawing mode
+        if (editorDrawMode) {
+          if (isDouble) {
+            if (editorDrawMode === 'building') finishDrawBuilding();
+            else finishDrawRoad();
+            return;
+          }
+          drawPoints.push([gp.x, gp.z]);
+          updateDrawPreview();
+          return;
+        }
+
+        // Select mode: check handles first, then buildings, then roads
+        raycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
+
+        // Check rotation handle
+        if (editorRotHandle) {
+          const rh = raycaster.intersectObject(editorRotHandle);
+          if (rh.length > 0) {
+            const b = editorSelected.data;
+            const c = polygonCentroid(b.footprint);
+            const rot = THREE.MathUtils.degToRad(b.rotation || 0);
+            const wcx = b.x + Math.cos(rot) * c[0] - Math.sin(rot) * c[1];
+            const wcz = b.z + Math.sin(rot) * c[0] + Math.cos(rot) * c[1];
+            editorDrag = { type: 'rotate', startAngle: b.rotation || 0, centerX: wcx, centerZ: wcz };
+            controls.enabled = false;
+            return;
+          }
+        }
+
+        // Check vertex handles
+        if (editorHandles.length > 0) {
+          const hits = raycaster.intersectObjects(editorHandles);
+          if (hits.length > 0) {
+            const vi = hits[0].object.userData.vertexIndex;
+            editorDrag = { type: 'vertex', vertexIndex: vi, startWorld: gp.clone() };
+            controls.enabled = false;
+            return;
+          }
+        }
+
+        // Check buildings
+        if (buildingMeshes.length > 0) {
+          const hits = raycaster.intersectObjects(buildingMeshes);
+          if (hits.length > 0) {
+            const b = hits[0].object.userData.building;
+            selectBuilding(b);
+            editorDrag = { type: 'move', startWorld: gp.clone(), startX: b.x, startZ: b.z, moved: false };
+            controls.enabled = false;
+            return;
+          }
+        }
+
+        // Check roads (use roadMeshes)
+        if (roadMeshes.length > 0) {
+          const hits = raycaster.intersectObjects(roadMeshes);
+          if (hits.length > 0) {
+            const r = hits[0].object.userData.road;
+            selectRoad(r);
+            return;
+          }
+        }
+
+        // Clicked empty space
+        clearEditorSelection();
+      });
+
+      renderer.domElement.addEventListener('pointermove', (e) => {
+        if (!editActive) return;
+        const mx = (e.clientX / window.innerWidth) * 2 - 1;
+        const my = -(e.clientY / window.innerHeight) * 2 + 1;
+
+        // Drawing preview
+        if (editorDrawMode && drawPoints.length > 0) {
+          const gp = getGroundPoint(mx, my);
+          if (gp) updateDrawPreview([gp.x, gp.z]);
+          return;
+        }
+
+        // Dragging
+        if (!editorDrag || !editorSelected) return;
+        const gp = getGroundPoint(mx, my);
+        if (!gp) return;
+
+        if (editorDrag.type === 'move' && editorSelected.type === 'building') {
+          const dx = gp.x - editorDrag.startWorld.x;
+          const dz = gp.z - editorDrag.startWorld.z;
+          if (Math.abs(dx) > 0.3 || Math.abs(dz) > 0.3) editorDrag.moved = true;
+          editorSelected.data.x = editorDrag.startX + dx;
+          editorSelected.data.z = editorDrag.startZ + dz;
+          rebuildCampus(CAMPUS_DATA);
+          // Update handles (no full re-select during drag for perf)
+          const b = editorSelected.data;
+          const rot = THREE.MathUtils.degToRad(b.rotation || 0);
+          const cosR = Math.cos(rot), sinR = Math.sin(rot);
+          editorHandles.forEach((h, i) => {
+            if (i < b.footprint.length) {
+              const v = b.footprint[i];
+              h.position.set(b.x + cosR * v[0] - sinR * v[1], 0.5, b.z + sinR * v[0] + cosR * v[1]);
+            }
+          });
+          if (editorRotHandle) {
+            const c = polygonCentroid(b.footprint);
+            const bounds = footprintBounds(b.footprint);
+            const rd = Math.max(bounds.w, bounds.d) / 2 + 4;
+            editorRotHandle.position.set(
+              b.x + cosR * (c[0] + rd) - sinR * c[1], 0.5,
+              b.z + sinR * (c[0] + rd) + cosR * c[1]
+            );
+          }
+        } else if (editorDrag.type === 'vertex') {
+          const vi = editorDrag.vertexIndex;
+          if (editorSelected.type === 'building') {
+            const b = editorSelected.data;
+            // World to local
+            const rot = THREE.MathUtils.degToRad(b.rotation || 0);
+            const cosR = Math.cos(-rot), sinR = Math.sin(-rot);
+            const lx = cosR * (gp.x - b.x) - sinR * (gp.z - b.z);
+            const lz = sinR * (gp.x - b.x) + cosR * (gp.z - b.z);
+            b.footprint[vi] = [lx, lz];
+            rebuildCampus(CAMPUS_DATA);
+            selectBuilding(b);
+          } else if (editorSelected.type === 'road') {
+            const r = editorSelected.data;
+            r.path[vi] = [gp.x, gp.z];
+            rebuildCampus(CAMPUS_DATA);
+            selectRoad(r);
+          }
+        } else if (editorDrag.type === 'rotate') {
+          const angle = Math.atan2(gp.z - editorDrag.centerZ, gp.x - editorDrag.centerX);
+          editorSelected.data.rotation = Math.round(THREE.MathUtils.radToDeg(-angle));
+          rebuildCampus(CAMPUS_DATA);
+          selectBuilding(editorSelected.data);
+        }
+      });
+
+      renderer.domElement.addEventListener('pointerup', (e) => {
+        if (!editActive) return;
+        if (editorDrag) {
+          controls.enabled = true;
+          if (editorDrag.type === 'move' && editorDrag.moved) {
+            autosaveDraft();
+            selectBuilding(editorSelected.data);
+          } else if (editorDrag.type === 'vertex' || editorDrag.type === 'rotate') {
+            autosaveDraft();
+          }
+          editorDrag = null;
+        }
+      });
+
+      // --- Keyboard: Enter to finish draw, Delete to remove, Escape to cancel ---
+      document.addEventListener('keydown', (e) => {
+        if (!editActive) return;
+        // Don't intercept keyboard when typing in form inputs
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.key === 'Enter') {
+          if (editorDrawMode === 'building') finishDrawBuilding();
+          else if (editorDrawMode === 'road') finishDrawRoad();
+        } else if (e.key === 'Escape') {
+          cancelDraw();
+          showHint('Drawing cancelled');
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && editorSelected) {
+          if (editorSelected.type === 'building') {
+            CAMPUS_DATA.buildings.splice(editorSelected.index, 1);
+          } else if (editorSelected.type === 'road') {
+            CAMPUS_DATA.roads.splice(editorSelected.index, 1);
+          }
+          clearEditorSelection();
+          rebuildCampus(CAMPUS_DATA);
+          autosaveDraft();
+          showHint('Deleted');
+        }
+      });
+
+      // --- Export / Import / Reset ---
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        const json = JSON.stringify(CAMPUS_DATA, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'campus.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showHint('Exported campus.json');
+      });
+
+      document.getElementById('importBtn').addEventListener('click', () => {
+        document.getElementById('importFile').click();
+      });
+
+      document.getElementById('importFile').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (!data.buildings) throw new Error('No buildings array');
+            rebuildCampus(data);
+            autosaveDraft();
+            clearEditorSelection();
+            showHint('Imported!');
+          } catch (err) {
+            showHint('Import error: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      });
+
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        if (!confirm('Clear draft and reload from campus.json? This cannot be undone.')) return;
+        localStorage.removeItem(DRAFT_KEY);
+        location.reload();
+      });
+    }
+
+    // --- Post-processing ---
+    const renderScene = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.3, 0.4, 0.85
+    );
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderScene);
+    composer.addPass(bloomPass);
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      updateFlyAnimation();
+      controls.update();
+      composer.render();
+      labelRenderer.render(scene, camera);
+    }
+
+    // Start
+    (async () => {
+      await loadCampus();
+      animate();
+    })();
+  </script>
+</body>
+</html>
